@@ -1,5 +1,4 @@
 import time
-
 from nicegui import app, ui
 
 
@@ -33,10 +32,11 @@ class loginPage:
     if not self.database:
       ui.notify('Database not available', color='negative')
       return
-
-    if self.database.authenticate_user(username, password):
+    status,role = self.database.authenticate_user(username, password)
+    if status:
       app.storage.user['authenticated'] = True
       app.storage.user['username'] = username
+      app.storage.user['role'] = role
       app.storage.user['last_active'] = time.time()
       ui.notify(f'Welcome {username}', color='positive')
       ui.navigate.to('/')

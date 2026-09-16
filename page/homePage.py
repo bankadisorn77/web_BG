@@ -1,6 +1,7 @@
 from component.dashboard_card import DashboardCard
 from component.device_crad import DeviceCard
-from nicegui import ui
+from nicegui import ui,app
+from component.header import AppHeader
 
 
 class homePage:
@@ -29,19 +30,8 @@ class homePage:
     ) = (self.database.get_device_counts() if self.database else (0, 0, 0, 0))
 
     # Header Bar
-    with ui.header().classes(
-        'bg-white text-slate-800 shadow-sm justify-between items-center px-10'
-        ' py-4'
-    ):
-      with ui.row().classes('items-center gap-3'):
-        ui.icon('precision_manufacturing', color='primary').classes('text-3xl')
-        ui.label('BG System').classes('text-2xl font-bold tracking-wide')
-      with ui.row().classes('items-center gap-4'):
-        ui.button('LOGOUT', on_click=logout, color='red').props(
-            'unelevated text-color=white'
-        )
+    AppHeader(logout=logout)
 
-    # ------------------ สร้าง Confirmation Dialog ไว้ที่ระดับ Page ------------------
     with ui.dialog() as self.confirm_dialog, ui.card().classes(
         'p-6 rounded-xl w-96'
     ):
@@ -76,7 +66,6 @@ class homePage:
       self.on_device_update_all(self.update_all_device)
 
   def _render_device_cards(self):
-    """Render Cards ทั้งหมดใหม่"""
     self.devices_container.clear()
     self.cards_id.clear()
     with self.devices_container:
@@ -111,7 +100,6 @@ class homePage:
     )
 
   def deleteDevice(self, device_data: dict):
-    """เปิด Dialog ยืนยันการลบ"""
     self.target_delete_device = device_data
     dev_name = device_data.get('name', 'Unknown')
     self.lbl_confirm_msg.set_text(

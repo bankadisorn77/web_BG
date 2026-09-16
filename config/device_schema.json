@@ -1,0 +1,70 @@
+{
+  "edge_device": [
+    {
+      "section_id": "hardware",
+      "title": "Hardware status",
+      "items": [
+        {
+          "key": "camera",
+          "label": "CAMERA",
+          "default": "OFF",
+          "color_map": {"ON": "green", "RUNNING": "green", "OFF": "grey", "ERROR": "red"}
+        },
+        {
+          "key": "gpio",
+          "label": "GPIO",
+          "default": "OFF",
+          "color_map": {"ON": "green", "OFF": "grey", "ERROR": "red"}
+        },
+        {
+          "key": "program",
+          "label": "AI",
+          "default": "OFF",
+          "color_map": {"RUNNING": "green", "OFF": "grey", "ERROR": "red"}
+        },
+        {
+          "key": "device_status",
+          "label": "DEVICE",
+          "default": "INACTIVE",
+          "color_map": {"ACTIVE": "green", "INACTIVE": "grey", "ERROR": "red"}
+        }
+      ]
+    },
+    {
+      "section_id": "io",
+      "title": "Output channel",
+      "items": [
+        {
+          "key": "door_status",
+          "label": "Door Sensor",
+          "default": "CLOSED",
+          "color_map": {"OPEN": "orange", "CLOSED": "green", "OFF": "grey"}
+        },
+        {
+          "key": "alarm_status",
+          "label": "Alarm Siren",
+          "default": "OFF",
+          "color_map": {"ON": "green", "OFF": "grey", "ERROR": "red"}
+        },
+        {
+          "key": "relay_status",
+          "label": "Main Relay",
+          "default": "OFF",
+          "color_map": {"ON": "green", "OFF": "grey"}
+        },
+        {
+          "key": "light_status",
+          "label": "Tower Light",
+          "default": "OFF",
+          "color_map": {"ON": "green", "OFF": "grey"}
+        }
+      ]
+    }
+  ],
+  "webserver":{
+    "hearder":{
+      "project_name":"BG System",
+      "project_title":"Backgrinding Monitoring"
+    }
+  }
+}

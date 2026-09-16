@@ -5,7 +5,7 @@ import os
 import secrets
 import sqlite3
 import threading
-
+from typing import Tuple, Optional
 import bcrypt
 import fastapi
 
@@ -18,8 +18,6 @@ class Database:
     os.makedirs(os.path.dirname(db_url) or '.', exist_ok=True)
     self.db = sqlite3.connect(db_url, check_same_thread=False, timeout=15)
     self.db.row_factory = sqlite3.Row
-    # ล็อกสำหรับป้องกัน race condition เพราะ connection นี้ถูกเรียกใช้จาก
-    # ทั้ง thread หลักของ FastAPI/NiceGUI และ thread ของ MQTT client
     self._lock = threading.Lock()
 
     with self._lock:
@@ -54,6 +52,7 @@ class Database:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               username TEXT NOT NULL UNIQUE,
               password TEXT NOT NULL,
+              role TEXT NOT NULL DEFAULT 'user',
               last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           )""")
       cursor.execute("""CREATE TABLE IF NOT EXISTS logs (
@@ -82,27 +81,41 @@ class Database:
     self.register_user(username, password,role)
 
   # ================= User management methods =================
-  def register_user(self, username: str, password: str):
+  def register_user(self, username: str, password: str, role: str):
     hashed_password = self.hash_password(password)
     with self._lock:
-      cursor = self.db.cursor()
-      cursor.execute(
-          'INSERT INTO users (username, password) VALUES (?, ?)',
-          (username, hashed_password),
-      )
-      self.db.commit()
+      try:
+        cursor = self.db.cursor()
+        cursor.execute(
+                  'SELECT password FROM users WHERE username = ?', (username,)
+              )
+        result = cursor.fetchone()
+        if result:
+          return False,'This user is already registered.'
+        cursor.execute(
+            'INSERT INTO users (username, password,role) VALUES (?, ?, ?)',
+            (username, hashed_password,role),
+        )
+        self.db.commit()
+        return True,''
+      except Exception as e:
+        return False,e
 
-  def authenticate_user(self, username: str, password: str) -> bool:
+  def authenticate_user(self, username: str, password: str) -> Tuple[bool, Optional[str]]:
     with self._lock:
-      cursor = self.db.cursor()
-      cursor.execute(
-          'SELECT password FROM users WHERE username = ?', (username,)
-      )
-      result = cursor.fetchone()
+        cursor = self.db.cursor()
+        cursor.execute(
+            'SELECT password, role FROM users WHERE username = ?', (username,)
+        )
+        result = cursor.fetchone()
     if result:
-      stored_hashed_password = result[0]
-      return self.verify_password(password, stored_hashed_password)
-    return False
+        stored_hashed_password = result[0]
+        user_role = result[1]
+        
+        if self.verify_password(password, stored_hashed_password):
+            return True, user_role  
+
+    return False, None  
 
   def hash_password(self, password: str) -> str:
     salt = bcrypt.gensalt()
@@ -112,6 +125,51 @@ class Database:
   def verify_password(self, password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
+  def get_all_user(self):
+    with self._lock:
+      cursor = self.db.cursor()
+      cursor.execute(
+        'SELECT * FROM users'
+      )
+      return [dict(row) for row in cursor.fetchall()]
+    
+  def edit_user(self,id,username=None,password=None,role=None):
+      update_fields = []
+      params = []
+      if username is not None:
+        update_fields.append('username = ?')
+        params.append(username)
+      if password is not None:
+        update_fields.append('password = ?')
+        hash = self.hash_password(password)
+        params.append(hash)
+      if role is not None:
+        update_fields.append('role = ?')
+        params.append(role)
+      if not update_fields:
+        return False
+      
+      query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+      params.append(id)
+      with self._lock:
+          cursor = self.db.cursor()
+          try:
+            cursor.execute(query,tuple(params))
+            return True,'UPDATE SUCCESFUL'
+          except Exception as e:
+            return False,e
+          
+  def delete_user(self, user_id: int):
+      with self._lock:
+          try:
+              cursor = self.db.cursor()
+              cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+              self.db.commit()
+              
+              return True, 'DELETED'
+          except Exception as e:
+              self.db.rollback()
+              return False, str(e)
   # ================= Device management methods =================
   def register_device(
       self,
@@ -312,7 +370,6 @@ class Database:
       alarm_status: str = None,
       **kwargs,
   ):
-    """อัปเดตสถานะทั้งหมดแบบ Single Query และคืนค่า None เมื่อ API key ไม่ถูกต้อง (ไม่ raise Exception เพื่อป้องกัน Thread แครช)"""
     device = self.verify_api_key(api_key)
     if not device:
       logger.warning(

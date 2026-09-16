@@ -8,12 +8,14 @@ from fastapi.staticfiles import StaticFiles
 from nicegui import app, ui
 import uvicorn
 
-import config
+import config.config as config
 from model.data import Database
 from model.mqtt import MQTT
 from page.devicePage import devicePage
 from page.homePage import homePage
 from page.loginPage import loginPage
+from page.registerPage import RegisterPage
+from page.managementPage import Management
 
 logging.basicConfig(
     level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -146,6 +148,20 @@ def login_page():
     return
   loginPage(database=database)
 
+@ui.page('/register')
+def reg_page():
+  if not check_auth():
+    return
+  RegisterPage(database=database,logout=logout)
+  ui.timer(1.0, check_auth)
+
+@ui.page('/management')
+def reg_page():
+  # if not check_auth():
+  #   return
+  Management(database=database,logout=logout)
+  # ui.timer(1.0, check_auth)
+
 
 @ui.page('/')
 def main():
@@ -187,6 +203,8 @@ def device_page(device_id: int):
       on_terminal_log_register=register_terminal_listener,
   )
   ui.timer(1.0, check_auth)
+
+
 
 
 @server_app.post('/register_device')

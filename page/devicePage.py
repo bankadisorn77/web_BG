@@ -1,8 +1,7 @@
 from datetime import datetime
-
-from nicegui import ui
-
+from nicegui import ui,app
 from component.camera_stream import VideoCard
+from component.header import AppHeader
 from component.result_display import ResultDisplay
 from component.result_log import ResultLog
 from component.setting_config import ConfigModal
@@ -38,11 +37,25 @@ class devicePage:
     self.ip_address = (
         self.device.get('ip_address') if self.device else 'localhost'
     )
-    self.stream_url = (
-        f'http://{self.ip_address}:8095/video_feed'
-        if self.device
-        else 'http://localhost:8095/stream'
-    )
+    self.camera_count = 1
+    # self.stream_url = [
+    #     f'http://{self.ip_address}:8095/video_feed_{i + 1}'
+    #     for i in range(self.camera_count)
+    # ]
+    self.stream_url = [
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{2}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}',
+            f'http://{self.ip_address}:8095/video_feed_{1}'
+        ]
     self.mq = mq
 
     config_modal = ConfigModal(
@@ -54,28 +67,13 @@ class devicePage:
     result_log = ResultLog(database=self.database, device_id=self.device_id)
 
     # 1. Header
-    with ui.header().classes(
-        'bg-white text-slate-800 shadow-sm justify-between items-center px-10'
-        ' py-4'
-    ):
-      with ui.row().classes('items-center gap-3'):
-        ui.icon('precision_manufacturing', color='primary').classes('text-3xl')
-        ui.label('BG System').classes('text-2xl font-bold tracking-wide')
-      with ui.row().classes('items-center gap-4'):
-        ui.button(
-            'HOME', on_click=lambda: ui.navigate.to('/'), color='blue'
-        ).props('unelevated text-color=white')
-        ui.button('LOGOUT', on_click=self.logout, color='red').props(
-            'unelevated text-color=white'
-        )
+    AppHeader(logout=logout,device_name=self.device_name)
 
-    # 2. Main Dashboard Layout
     with ui.row().classes('w-full px-10 py-1 gap-8 items-start no-wrap'):
-      # คอลัมน์ซ้าย: Video Stream และ Result Display
-      with ui.column().classes('w-3/4 gap-6'):
-        VideoCard(stream_url=self.stream_url)
 
-      # คอลัมน์ขวา: Status Card และ Terminal Logs
+      with ui.column().classes('w-3/4 gap-6'):
+        VideoCard(stream_urls=self.stream_url)
+
       with ui.column().classes('w-1/4 gap-6'):
         with ui.card().classes('w-full p-6 shadow-md bg-white rounded-xl'):
           with ui.row().classes('items-center justify-between w-full mb-3'):
@@ -84,7 +82,7 @@ class devicePage:
             )
             ui.button(icon='settings', on_click=config_modal.open).props(
                 'flat round text-color=slate-700'
-            )
+            ).bind_visibility_from(app.storage.user,'role',backward=lambda r: r == 'admin')
           with ui.row().classes('items-center justify-between w-full mb-3'):
             with ui.row().classes('items-center gap-2'):
               self.status_icon = ui.icon('cancel', color='grey').classes(

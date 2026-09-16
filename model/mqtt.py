@@ -9,15 +9,12 @@ import time
 
 import paho.mqtt.client as MQ
 
-import config
+import config.config as config
 
 logger = logging.getLogger(__name__)
 
 PAYLOAD_KEY_MAPPING = {
     'api_key': 'api_key',
-    # device_status ตั้งใจไม่ใส่ไว้ที่นี่ — status topic ไม่มีสิทธิ์กำหนด
-    # device_status อีกต่อไป มีแค่ heartbeat เท่านั้นที่กำหนดค่านี้ได้ (ดู
-    # _on_message: subpath == 'heartbeat')
     'camera_status': 'camera',
     'gpio_status': 'gpio',
     'program_status': 'program_status',
@@ -43,7 +40,6 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 
 def append_device_log(device_name: str, message: str):
-  """เขียน log ข้อความจากอุปกรณ์ลงไฟล์แยกเครื่องพร้อม auto-rotate"""
   log_file = os.path.join(LOG_DIR, f'{device_name}.log')
   logger_for_device = logging.getLogger(f'dev_log_{device_name}')
   logger_for_device.setLevel(logging.INFO)
@@ -63,7 +59,6 @@ def append_device_log(device_name: str, message: str):
 
 
 def get_recent_device_logs(device_name: str, lines: int = 100):
-  """อ่าน log ล่าสุด N บรรทัดโดยตัด [YYYY-MM-DD HH:MM:SS] ออกเพื่อประหยัดพื้นที่แสดงผล"""
   log_file = os.path.join(LOG_DIR, f'{device_name}.log')
   if not os.path.exists(log_file):
     return []
@@ -72,7 +67,6 @@ def get_recent_device_logs(device_name: str, lines: int = 100):
       cleaned_logs = []
       for line in deque(f, maxlen=lines):
         clean_line = line.strip()
-        # ตัด timestamp หน้าบรรทัดออก
         clean_msg = re.sub(
             r'^\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\]\s*', '', clean_line
         )
@@ -157,7 +151,6 @@ class MQTT:
     device_name = match.group('device')
     subpath = match.group('subpath')
 
-    # 1. รับ Log Stream
     if subpath == 'logs':
       log_text = msg.payload.decode('utf-8', errors='ignore').strip()
       if log_text:
@@ -271,8 +264,6 @@ class MQTT:
 
   def on_del_device(self, msg, device_name='TEST'):
     logger.info('Delete device name: %s', device_name)
-    # เคลียร์ cache ของอุปกรณ์นี้ทิ้ง กันกรณีมีการลงทะเบียนชื่อเดิมใหม่
-    # (ได้ device_id/api_key ใหม่) แล้ว cache เก่ายังค้าง state/api_key เดิมอยู่
     self.device_cache.pop(device_name, None)
     if self.is_connected:
       try:
