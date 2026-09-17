@@ -8,13 +8,13 @@
           "key": "camera",
           "label": "CAMERA",
           "default": "OFF",
-          "color_map": {"ON": "green", "RUNNING": "green", "OFF": "grey", "ERROR": "red"}
+          "color_map": {"ONLINE": "green", "OFF": "grey", "ERROR": "red"}
         },
         {
           "key": "gpio",
           "label": "GPIO",
           "default": "OFF",
-          "color_map": {"ON": "green", "OFF": "grey", "ERROR": "red"}
+          "color_map": {"ONLINE": "green", "OFF": "grey", "ERROR": "red"}
         },
         {
           "key": "program",
@@ -37,14 +37,14 @@
         {
           "key": "door_status",
           "label": "Door Sensor",
-          "default": "CLOSED",
+          "default": "OFF",
           "color_map": {"OPEN": "orange", "CLOSED": "green", "OFF": "grey"}
         },
         {
           "key": "alarm_status",
           "label": "Alarm Siren",
           "default": "OFF",
-          "color_map": {"ON": "green", "OFF": "grey", "ERROR": "red"}
+          "color_map": {"ON": "red", "OFF": "grey"}
         },
         {
           "key": "relay_status",

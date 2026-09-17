@@ -14,26 +14,29 @@ DEVICE_TIMEOUT_SECONDS = int(os.environ.get('DEVICE_TIMEOUT_SECONDS', '60'))
 # Web Session & Security
 # ------------------------------------------------------------------
 SESSION_TIMEOUT_SECONDS = int(os.environ.get('SESSION_TIMEOUT_SECONDS', '600'))
-STORAGE_SECRET = os.environ.get('BG_STORAGE_SECRET', 'BGsystem')
+STORAGE_SECRET = os.environ.get('STORAGE_SECRET', 'BGsystem')
 # ------------------------------------------------------------------
 # Database & File Storage
 # ------------------------------------------------------------------
-DB_PATH = os.environ.get('BG_DB_PATH', 'data/db_system.db')
-UPLOAD_DIR = os.environ.get('BG_UPLOAD_DIR', 'uploads')
-DEVICE_LOG_DIR = os.environ.get('BG_DEVICE_LOG_DIR', 'server_device_logs')
+DB_PATH = os.environ.get('DB_PATH', 'data/db_system.db')
+UPLOAD_DIR = os.environ.get('UPLOAD_DIR', 'uploads')
+DEVICE_LOG_DIR = os.environ.get('DEVICE_LOG_DIR', 'server_device_logs')
 # ------------------------------------------------------------------
 # Web Authentication
 # ------------------------------------------------------------------
-DEFAULT_ADMIN_USERNAME = os.environ.get('BG_ADMIN_USERNAME', 'admin')
-DEFAULT_ADMIN_PASSWORD = os.environ.get('BG_ADMIN_PASSWORD', '1234')
-DEFAULT_ADMIN_ROLE = os.environ.get('BG_ADMIN_ROLE', 'admin')
+DEFAULT_ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
+DEFAULT_ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '1234')
+DEFAULT_ADMIN_ROLE = os.environ.get('ADMIN_ROLE', 'admin')
 # ------------------------------------------------------------------
 # Web Server Configuration
 # ------------------------------------------------------------------
-SERVER_HOST = os.environ.get('BG_SERVER_HOST', '0.0.0.0')
-SERVER_PORT = int(os.environ.get('BG_SERVER_PORT', '8080'))
+SERVER_HOST = os.environ.get('SERVER_HOST', '0.0.0.0')
+SERVER_PORT = int(os.environ.get('SERVER_PORT', '8080'))
 
 PLATFORM_NAME = os.environ.get('BG_PLATFORM_NAME', 'Vision Inspection Platform')
+
+# พอร์ตที่ edge device เปิด MJPEG server ไว้ (StateMachine.py: start_mjpeg_server)
+EDGE_MJPEG_PORT = int(os.environ.get('EDGE_MJPEG_PORT', '8095'))
 
 try:
     with open('config/device_schema.json', 'r', encoding='utf-8') as file:

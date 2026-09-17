@@ -3,7 +3,8 @@ import logging
 import os
 import time
 
-from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from nicegui import app, ui
 import uvicorn
@@ -11,6 +12,7 @@ import uvicorn
 import config.config as config
 from model.data import Database
 from model.mqtt import MQTT
+from model.stream_hub import StreamHub
 from page.devicePage import devicePage
 from page.homePage import homePage
 from page.loginPage import loginPage
@@ -23,22 +25,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SESSION_TIMEOUT = config.SESSION_TIMEOUT_SECONDS
-
-# --------------------------------------------------------------------------
-# Callback registries
-#
-# CARD_CALLBACKS / PAGE_CALLBACKS: ใช้ได้กับหลายหน้าพร้อมกันอยู่แล้ว (ของเดิม)
-# DEVICE_LIST_CALLBACKS: อัปเดตลิสต์อุปกรณ์บนหน้า home เมื่อมีการเพิ่ม/ลบอุปกรณ์
-#   (เดิมเป็น global ตัวเดียว แก้เป็น set เพื่อรองรับหลาย session)
-# LOG_CALLBACKS: อัปเดตรูปภาพผลตรวจล่าสุดบนหน้า device แยกตาม device_id
-#   (เดิมเป็น global ตัวเดียวรวมทุกอุปกรณ์ ทำให้เปิดหลายหน้า device
-#   พร้อมกันแล้วอัปเดตผิดอุปกรณ์/อัปเดตไม่ครบ)
-# --------------------------------------------------------------------------
 CARD_CALLBACKS = set()
 PAGE_CALLBACKS = set()
 DEVICE_LIST_CALLBACKS = set()
-LOG_CALLBACKS = {}  # {device_id: set(callback)}
-# เก็บ callback ของหน้าจอ Terminal Log แยกตาม {device_name: set(callbacks)}
+LOG_CALLBACKS = {} 
 TERMINAL_LOG_CALLBACKS = {}
 
 
@@ -74,8 +64,8 @@ def trigger_log_update(device_id):
       LOG_CALLBACKS.get(device_id, set()).discard(cb)
 
 
-def trigger_terminal_log_update(device_name, message):
-  cbs = TERMINAL_LOG_CALLBACKS.get(device_name, set())
+def trigger_terminal_log_update(device_id, message):
+  cbs = TERMINAL_LOG_CALLBACKS.get(device_id, set())
   for cb in list(cbs):
     try:
       cb(message)
@@ -100,16 +90,19 @@ mq = MQTT(
 )
 
 
+# ดึงภาพจาก edge เส้นเดียวต่อกล้อง แล้วกระจายให้ผู้ชมทุกคน (ดู model/stream_hub.py)
+stream_hub = StreamHub()
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
   mq.connectMQ()
   yield
   mq.disconnectMQ()
+  stream_hub.shutdown()
 
 
 server_app = FastAPI(title='BG System API', lifespan=lifespan)
-
-# ต้องมีโฟลเดอร์อยู่จริงก่อน mount ไม่งั้น StaticFiles จะทำให้ start ไม่ขึ้น
 os.makedirs(config.UPLOAD_DIR, exist_ok=True)
 server_app.mount('/media', StaticFiles(directory=config.UPLOAD_DIR), name='media')
 
@@ -190,7 +183,7 @@ def device_page(device_id: int):
   device_name = device.get('name', '')
 
   def register_terminal_listener(callback):
-    TERMINAL_LOG_CALLBACKS.setdefault(device_name, set()).add(callback)
+    TERMINAL_LOG_CALLBACKS.setdefault(device_id, set()).add(callback)
 
   devicePage(
       device_id=device_id,
@@ -248,6 +241,61 @@ async def image_log(
   if device:
     trigger_log_update(device.get('id'))
   return {'message': 'Log added successfully'}
+
+
+def is_request_authenticated(request: Request) -> bool:
+  try:
+    return bool(app.storage.user.get('authenticated', False))
+  except Exception:
+    session_id = request.session.get('id') if 'session' in request.scope else None
+    if not session_id:
+      return False
+    user_storage = getattr(app.storage, '_users', {}).get(session_id)
+    if user_storage is None:
+      return False
+    try:
+      return bool(user_storage.get('authenticated', False))
+    except Exception:
+      return False
+
+
+@app.get('/stream/{device_id}/{cam_index}')
+async def stream_device(request: Request, device_id: int, cam_index: int):
+  if not is_request_authenticated(request):
+    raise HTTPException(status_code=401, detail='Not authenticated')
+
+  device = database.get_device_by_id(device_id)
+  if not device or not device.get('ip_address'):
+    raise HTTPException(status_code=404, detail='Device not found or has no IP')
+
+  source_url = (
+      f"http://{device['ip_address']}:{config.EDGE_MJPEG_PORT}"
+      f'/video_feed_{cam_index}'
+  )
+  key = (device_id, cam_index)
+
+  def frame_generator():
+    stream_hub.acquire(key, source_url)
+    try:
+      last_sent = None
+      while True:
+        frame = stream_hub.get_frame(key)
+        if frame is not None and frame is not last_sent:
+          last_sent = frame
+          yield (
+              b'--frame\r\n'
+              b'Content-Type: image/jpeg\r\n'
+              b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n'
+              + frame + b'\r\n'
+          )
+        time.sleep(0.04)
+    finally:
+      stream_hub.release(key)
+
+  return StreamingResponse(
+      frame_generator(),
+      media_type='multipart/x-mixed-replace; boundary=frame',
+  )
 
 
 ui.run_with(

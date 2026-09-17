@@ -9,6 +9,8 @@ from typing import Tuple, Optional
 import bcrypt
 import fastapi
 
+import config.config as config
+
 logger = logging.getLogger(__name__)
 
 
@@ -282,16 +284,60 @@ class Database:
     return dict(row) if row else None
 
   def delete_device(self, device_id: int) -> bool:
+    """ลบอุปกรณ์ พร้อมเก็บกวาดไฟล์ที่เกี่ยวข้องทั้งหมด
+
+    เดิมลบแค่ row ใน database ทำให้ไฟล์รูปใน uploads/ และไฟล์ log ของเครื่องนั้น
+    ค้างอยู่บนดิสก์ตลอดไป (กินพื้นที่เพิ่มเรื่อย ๆ และเป็นข้อมูลที่ไม่มีใคร
+    เข้าถึงได้อีกแล้ว) -> ลบไฟล์ให้ด้วย
+    """
     try:
+      # ดึงรายชื่อไฟล์รูปก่อนลบ row (หลังลบแล้วจะหาไม่ได้อีก)
+      image_files = [
+          row.get('image_path')
+          for row in self.get_logs(device_id)
+          if row.get('image_path')
+      ]
+
       with self._lock:
         cursor = self.db.cursor()
         cursor.execute('DELETE FROM logs WHERE device_id = ?', (device_id,))
         cursor.execute('DELETE FROM devices WHERE id = ?', (device_id,))
         self.db.commit()
-        return cursor.rowcount > 0
+        deleted = cursor.rowcount > 0
+
+      if deleted:
+        self._cleanup_device_files(device_id, image_files)
+      return deleted
     except Exception as e:
       logger.error('[Database Error] delete_device: %s', e)
       return False
+
+  def _cleanup_device_files(self, device_id: int, image_files: list):
+    """ลบไฟล์รูปใน uploads/ และไฟล์ log ของอุปกรณ์ที่ถูกลบไปแล้ว
+
+    ทำแบบ best-effort: ถ้าลบไฟล์ไหนไม่ได้ (เช่นถูกเปิดค้างอยู่) แค่ log warning
+    ไม่ throw ออกไป เพราะ row ใน database ถูกลบสำเร็จไปแล้ว
+    """
+    upload_dir = getattr(config, 'UPLOAD_DIR', 'uploads')
+    for filename in image_files:
+      # ป้องกัน path traversal: ใช้แค่ basename เสมอ ไม่ยอมให้ค่าใน database
+      # พาไปลบไฟล์นอกโฟลเดอร์ uploads
+      path = os.path.join(upload_dir, os.path.basename(filename))
+      try:
+        if os.path.exists(path):
+          os.remove(path)
+      except Exception as e:
+        logger.warning('Could not delete image %s: %s', path, e)
+
+    # ปิด handler ก่อนลบ ไม่งั้นบน Windows จะลบไฟล์ที่ถูกเปิดค้างอยู่ไม่ได้
+    try:
+      from model.mqtt import close_device_log_handlers, get_device_log_paths
+      close_device_log_handlers(device_id)
+      for log_path in get_device_log_paths(device_id):
+        if os.path.exists(log_path):
+          os.remove(log_path)
+    except Exception as e:
+      logger.warning('Could not delete log files for device %s: %s', device_id, e)
 
   # ================= Update device methods =================
   def update_device_config(
@@ -424,8 +470,7 @@ class Database:
 
     try:
       device_id = device.get('id')
-      device_name = device.get('name')
-      image_output_path = self.base64_to_image(image_input_path, device_name)
+      image_output_path = self.base64_to_image(image_input_path, device_id)
       if not image_output_path:
         return False
 
@@ -463,11 +508,18 @@ class Database:
       row = cursor.fetchone()
     return dict(row) if row else None
 
-  def base64_to_image(self, base64_string: str, device_name: str):
-    os.makedirs('uploads', exist_ok=True)
+  def base64_to_image(self, base64_string: str, device_id):
+    """บันทึกรูป โดยตั้งชื่อไฟล์จาก device_id ไม่ใช่ชื่อเครื่อง
+
+    เดิมใช้ชื่อเครื่องเป็นส่วนหนึ่งของชื่อไฟล์ ถ้าชื่อมี / \\ : * ? " < > |
+    จะเซฟรูปไม่ได้เลย (เข้า except แล้วคืน None เงียบ ๆ) และพอเปลี่ยนชื่อเครื่อง
+    ไฟล์เก่า-ใหม่ก็ไม่สัมพันธ์กัน
+    """
+    upload_dir = getattr(config, 'UPLOAD_DIR', 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-    filename = f'{device_name}_{timestamp}.jpg'
-    output_path = os.path.join('uploads', filename)
+    filename = f'device_{device_id}_{timestamp}.jpg'
+    output_path = os.path.join(upload_dir, filename)
 
     try:
       with open(output_path, 'wb') as f:

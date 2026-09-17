@@ -30,3 +30,6 @@ db_system.db
 .idea/
 .DS_Store
 Thumbs.db
+
+# nicegui
+*.nicegui
