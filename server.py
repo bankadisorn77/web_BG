@@ -211,17 +211,27 @@ def device_page(device_id: int):
 @server_app.post('/register_device')
 async def register_device(payload: dict = Body(...)):
   try:
+    name = payload.get('name')
+    ip_address = payload.get('ip_address')
+    mac_address = payload.get('mac_address')
+    input_channel = payload.get('input_channel', 0)
+    model_path = payload.get('model_path', '')
+    save_image_path = payload.get('save_image_path', '')
+    mqtt_broker = payload.get('mqtt_broker', '')
+    output_channel = payload.get('output_channel', {})
+    # if not output_channel:
+    #   output_channel = {
+    #       k: v for k, v in payload.items() if k.startswith('output_')
+    #   }
     api_key = database.register_device(
-        payload.get('name'),
-        payload.get('ip_address'),
-        payload.get('mac_address'),
-        payload.get('input_channel'),
-        payload.get('output_alarm_channel'),
-        payload.get('output_relay_channel'),
-        payload.get('output_light_channel'),
-        payload.get('model_path'),
-        payload.get('save_image_path'),
-        payload.get('mqtt_broker'),
+        name=name,
+        ip_address=ip_address,
+        mac_address=mac_address,
+        input_channel=input_channel,
+        output_channel=output_channel,
+        model_path=model_path,
+        save_image_path=save_image_path,
+        mqtt_broker=mqtt_broker,
     )
     trigger_device_list_update()
     return {'api_key': api_key}
@@ -344,13 +354,13 @@ if __name__ == '__main__':
       'server:server_app',
       host=config.SERVER_HOST,
       port=config.SERVER_PORT,
-      reload=True,
-      reload_dirs=[
-          'component',
-          'config',
-          'model',
-          'page',
-      ],
+      reload=False,
+      # reload_dirs=[
+      #     'component',
+      #     'config',
+      #     'model',
+      #     'page',
+      # ],
       # reload_excludes=[
       #     '*.db',
       #     '*.db-wal',

@@ -20,35 +20,17 @@ class Database:
     os.makedirs(os.path.dirname(db_url) or '.', exist_ok=True)
     self.db = sqlite3.connect(db_url, check_same_thread=False, timeout=15)
     self.db.row_factory = sqlite3.Row
+    self.schema = config.WEB_SCHEMA.get('webserver', {})
+    self.db_schema = self.schema.get('database', {})
+    self.columns_schema = self.db_schema.get('devices_table', [])
     self._lock = threading.Lock()
 
     with self._lock:
       cursor = self.db.cursor()
       cursor.execute('PRAGMA journal_mode=WAL;')
 
-      cursor.execute("""CREATE TABLE IF NOT EXISTS devices (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              name TEXT NOT NULL,
-              ip_address TEXT NOT NULL default '',
-              mac_address TEXT NOT NULL default '',
-              gpio TEXT NOT NULL default 'OFF',
-              camera TEXT NOT NULL default 'OFF',
-              program TEXT NOT NULL default 'OFF',
-              device_status TEXT NOT NULL default 'INACTIVE',
-              door_status TEXT NOT NULL default 'CLOSE',
-              alarm_status TEXT NOT NULL default 'OFF',
-              relay_status TEXT NOT NULL default 'OFF',
-              light_status TEXT NOT NULL default 'OFF',
-              input_channel INTEGER NOT NULL default 0,
-              output_alarm_channel INTEGER NOT NULL default 0,
-              output_relay_channel INTEGER NOT NULL default 1,
-              output_light_channel INTEGER NOT NULL default 2,
-              model_path TEXT NOT NULL default 'Yolov12best_bg_v2_openvino_model',
-              save_image_path TEXT NOT NULL default 'save_image_output',
-              mqtt_broker TEXT NOT NULL default 'broker.emqx.io',
-              api_key TEXT NOT NULL unique,
-              last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )""")
+      self.CreateDeviceTable(cursor=cursor)
+
       cursor.execute("""CREATE TABLE IF NOT EXISTS users (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               username TEXT NOT NULL UNIQUE,
@@ -173,18 +155,16 @@ class Database:
               return False, str(e)
   # ================= Device management methods =================
   def register_device(
-      self,
-      name: str,
-      ip_address: str,
-      mac_address: str,
-      input_channel: int,
-      output_alarm_channel: int,
-      output_relay_channel: int,
-      output_light_channel: int,
-      model_path: str,
-      save_image_path: str,
-      mqtt_broker: str,
-  ) -> str:
+    self,
+    name: str,
+    ip_address: str,
+    mac_address: str,
+    input_channel: int,
+    output_channel: dict,
+    model_path: str,
+    save_image_path: str,
+    mqtt_broker: str,
+) -> str:
     with self._lock:
       cursor = self.db.cursor()
       cursor.execute('SELECT 1 FROM devices WHERE name = ?', (name,))
@@ -193,30 +173,40 @@ class Database:
             status_code=400, detail=f"Device name '{name}' already exists"
         )
 
+      base_cols = [
+          'name',
+          'ip_address',
+          'mac_address',
+          'input_channel',
+          'model_path',
+          'save_image_path',
+          'mqtt_broker',
+      ]
+      base_vals = [
+          name,
+          ip_address,
+          mac_address,
+          input_channel,
+          model_path,
+          save_image_path,
+          mqtt_broker,
+      ]
+      extra_cols = list(output_channel.keys())
+      extra_vals = list(output_channel.values())
+
+      all_cols = base_cols + extra_cols + ['api_key']
+      columns_str = ', '.join(all_cols)
+      placeholders_str = ', '.join(['?'] * len(all_cols))
+
+      sql_query = f'INSERT INTO devices ({columns_str}) VALUES ({placeholders_str})'
+
       max_retries = 5
       for _ in range(max_retries):
         api_key = secrets.token_hex(16)
+        full_values = tuple(base_vals + extra_vals + [api_key])
+
         try:
-          cursor.execute(
-              """INSERT INTO devices (
-                          name, ip_address, mac_address, input_channel,
-                          output_alarm_channel, output_relay_channel, output_light_channel,
-                          model_path, save_image_path, mqtt_broker, api_key
-                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-              (
-                  name,
-                  ip_address,
-                  mac_address,
-                  input_channel,
-                  output_alarm_channel,
-                  output_relay_channel,
-                  output_light_channel,
-                  model_path,
-                  save_image_path,
-                  mqtt_broker,
-                  api_key,
-              ),
-          )
+          cursor.execute(sql_query, full_values)
           self.db.commit()
           return api_key
         except sqlite3.IntegrityError:
@@ -323,79 +313,49 @@ class Database:
       logger.warning('Could not delete log files for device %s: %s', device_id, e)
 
   # ================= Update device methods =================
-  def update_device_config(
-      self,
-      api_key: str,
-      name: str = None,
-      input_channel: int = None,
-      output_alarm_channel: int = None,
-      output_relay_channel: int = None,
-      output_light_channel: int = None,
-      model_path: str = None,
-      mqtt_broker: str = None,
-  ):
+  def update_device_config(self, api_key: str, payload: dict) -> bool:
     device = self.verify_api_key(api_key)
     if not device:
       logger.warning('update_device_config: Invalid API key (%s)', api_key)
       return False
 
     device_id = device.get('id')
-    if name is not None and name != device.get('name'):
-      existing = self.get_device_by_name(name)
+    new_name = payload.get('name')
+
+    if new_name and new_name != device.get('name'):
+      existing = self.get_device_by_name(new_name)
       if existing and existing.get('id') != device_id:
         raise fastapi.HTTPException(
-            status_code=400, detail=f"Device name '{name}' already exists"
+            status_code=400, detail=f"Device name '{new_name}' already exists"
         )
 
-    update_fields = []
-    params = []
-
-    if name is not None:
-      update_fields.append('name = ?')
-      params.append(name)
-    if input_channel is not None:
-      update_fields.append('input_channel = ?')
-      params.append(input_channel)
-    if output_alarm_channel is not None:
-      update_fields.append('output_alarm_channel = ?')
-      params.append(output_alarm_channel)
-    if output_relay_channel is not None:
-      update_fields.append('output_relay_channel = ?')
-      params.append(output_relay_channel)
-    if output_light_channel is not None:
-      update_fields.append('output_light_channel = ?')
-      params.append(output_light_channel)
-    if model_path is not None:
-      update_fields.append('model_path = ?')
-      params.append(model_path)
-    if mqtt_broker is not None:
-      update_fields.append('mqtt_broker = ?')
-      params.append(mqtt_broker)
-
-    if not update_fields:
-      return False
-
-    query = f"UPDATE devices SET {', '.join(update_fields)} WHERE id = ?"
-    params.append(device_id)
     with self._lock:
       cursor = self.db.cursor()
+      cursor.execute('PRAGMA table_info(devices)')
+      valid_columns = {
+          row[1] for row in cursor.fetchall() if row[1] not in ('id', 'api_key')
+      }
+
+      update_fields = []
+      params = []
+
+      for key, value in payload.items():
+        if key in valid_columns and value is not None:
+          update_fields.append(f'{key} = ?')
+          params.append(value)
+
+      if not update_fields:
+        return False
+
+      query = f"UPDATE devices SET {', '.join(update_fields)} WHERE id = ?"
+      params.append(device_id)
+
       cursor.execute(query, tuple(params))
       self.db.commit()
+
     return True
 
-  def update_device_all_status(
-      self,
-      api_key: str,
-      device_status: str = None,
-      camera_status: str = None,
-      gpio_status: str = None,
-      program_status: str = None,
-      relay_status: str = None,
-      light_status: str = None,
-      door_status: str = None,
-      alarm_status: str = None,
-      **kwargs,
-  ):
+  def update_device_all_status(self, api_key: str, **kwargs):
     device = self.verify_api_key(api_key)
     if not device:
       logger.warning(
@@ -404,31 +364,29 @@ class Database:
       return None
 
     device_id = device.get('id')
-    fields = []
-    values = []
 
-    status_mapping = {
-        'device_status': device_status,
-        'camera': camera_status,
-        'gpio': gpio_status,
-        'program': program_status,
-        'relay_status': relay_status,
-        'light_status': light_status,
-        'door_status': door_status,
-        'alarm_status': alarm_status,
-    }
-
-    for col, val in status_mapping.items():
-      if val is not None:
-        fields.append(f'{col} = ?')
-        values.append(val)
-
-    fields.append('last_seen = CURRENT_TIMESTAMP')
-
-    query = f"UPDATE devices SET {', '.join(fields)} WHERE id = ?"
-    values.append(device_id)
     with self._lock:
       cursor = self.db.cursor()
+      cursor.execute('PRAGMA table_info(devices)')
+      valid_columns = {row[1] for row in cursor.fetchall()}
+
+      fields = []
+      values = []
+
+      for key, val in kwargs.items():
+        if val is not None and key in valid_columns and key not in ('id', 'api_key'):
+          fields.append(f'{key} = ?')
+          values.append(val)
+
+      if 'last_seen' in valid_columns:
+        fields.append('last_seen = CURRENT_TIMESTAMP')
+
+      if not fields:
+        return device_id
+
+      query = f"UPDATE devices SET {', '.join(fields)} WHERE id = ?"
+      values.append(device_id)
+
       cursor.execute(query, tuple(values))
       self.db.commit()
 
@@ -501,7 +459,51 @@ class Database:
       logger.error('Error saving image: %s', e)
       return None
 
+  # ================= create table =================
+  def CreateDeviceTable(self, cursor):
+    
+    columns = []
 
+    base_col = [
+        'id INTEGER PRIMARY KEY AUTOINCREMENT',
+        'name TEXT NOT NULL',
+        'ip_address TEXT NOT NULL',
+        'mac_address TEXT NOT NULL',
+        "model_path TEXT NOT NULL DEFAULT 'Yolov12best_bg_v2_openvino_model'",
+        "save_image_path TEXT NOT NULL DEFAULT 'save_image_output'",
+        "mqtt_broker TEXT NOT NULL DEFAULT 'broker.emqx.io'",
+        'api_key TEXT NOT NULL UNIQUE',
+        'last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+    ]
+
+    for col in self.columns_schema:
+      key = col['key']
+      col_type = col.get('type', 'TEXT').upper()
+      is_null = col.get('null', False)
+      null_clause = '' if is_null else 'NOT NULL'
+
+      default_val = col.get('default')
+      if isinstance(default_val, str):
+        default_clause = f"DEFAULT '{default_val}'"
+      elif default_val is not None:
+        default_clause = f'DEFAULT {default_val}'
+      else:
+        default_clause = ''
+
+      col_def = (
+          f'{key} {col_type} {null_clause} {default_clause}'.strip().replace(
+              '  ', ' '
+          )
+      )
+      columns.append(col_def)
+    all_col = base_col + columns
+    create_table_sql = f"CREATE TABLE IF NOT EXISTS devices ({', '.join(all_col)})"
+
+    cursor.execute(create_table_sql)
+
+
+
+          
 database = Database
 
 if __name__ == '__main__':

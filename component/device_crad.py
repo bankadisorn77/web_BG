@@ -13,7 +13,7 @@ class DeviceCard(ui.card):
     web_schema = config.WEB_SCHEMA
     device_schema = web_schema.get('edge_device',[])
     hw_status = device_schema[0]
-    io_channel = device_schema[1]
+    io_status = device_schema[1]
     self.badges = {}
     device_name = self.device.get('name', 'None')
     device_id = self.device.get('id', 'None')
@@ -32,7 +32,7 @@ class DeviceCard(ui.card):
       with ui.row().classes('w-full justify-between items-start mb-6 gap-4'):
         # Hardware Status
         with ui.column().classes('flex-1 gap-2'):
-          ui.label('Hardware status').classes(
+          ui.label(hw_status.get('title','status')).classes(
               'text-xs text-slate-400 font-semibold w-full text-center'
           )
           for indix,item in enumerate(hw_status.get('items',[])):
@@ -58,10 +58,10 @@ class DeviceCard(ui.card):
 
         # Output Channel
         with ui.column().classes('flex-1 gap-2'):
-          ui.label('I/O channel').classes(
+          ui.label(io_status.get('title','status')).classes(
               'text-xs text-slate-400 font-semibold w-full text-center'
           )
-          for indix,item in enumerate(io_channel.get('items',[])):
+          for indix,item in enumerate(io_status.get('items',[])):
             key = item['key']
             label = item['label']
             default_val = item["default"]
