@@ -88,7 +88,7 @@ class devicePage:
               )
             with ui.row().classes('items-center justify-end'):
               ui.button('IMAGE LOGS', on_click=result_log.open).props(
-                  'dense unelevated'
+                  'dense unelevated'a
               ).classes('bg-green-600 text-white font-bold px-3')
               self.btn_service = (
                   ui.button('START', on_click=lambda: self.switch_service())
