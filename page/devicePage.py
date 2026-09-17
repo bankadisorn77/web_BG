@@ -45,7 +45,6 @@ class devicePage:
     ]
     self.mq = mq
 
-    # โครงสร้าง Schema สำหรับสร้าง Badge
     web_schema = config.WEB_SCHEMA
     self.device_schema = web_schema.get('edge_device', [])
     self.badges = {}

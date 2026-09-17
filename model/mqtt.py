@@ -40,15 +40,6 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 
 def append_device_log(device_id, message: str):
-  """เขียน log ของอุปกรณ์ลงไฟล์ โดยตั้งชื่อไฟล์ตาม device_id (ไม่ใช่ชื่อเครื่อง)
-
-  เดิมใช้ชื่อเครื่องเป็นชื่อไฟล์ พอผู้ใช้เปลี่ยนชื่อเครื่องในหน้า config แล้ว
-  ระบบจะไปสร้างไฟล์ log ใหม่ตามชื่อใหม่ ทำให้ log เก่าทั้งหมด "หาย" จากหน้าเว็บ
-  (จริง ๆ ไฟล์เก่ายังอยู่แต่ไม่มีใครอ่าน) และถ้าชื่อมีอักขระที่ใช้เป็นชื่อไฟล์
-  ไม่ได้ (/ \\ : * ? " < > |) จะเปิด/สร้างไฟล์ไม่ได้เลย
-  -> เปลี่ยนมาใช้ device_id ซึ่งเป็น primary key ใน database ไม่มีวันเปลี่ยน
-  และปลอดภัยกับ filesystem เสมอ
-  """
   log_file = os.path.join(LOG_DIR, f'device_{device_id}.log')
   logger_for_device = logging.getLogger(f'dev_log_{device_id}')
   logger_for_device.setLevel(logging.INFO)
@@ -68,17 +59,11 @@ def append_device_log(device_id, message: str):
 
 
 def get_device_log_paths(device_id):
-  """คืน path ของไฟล์ log ทั้งหมดของอุปกรณ์นี้ (รวมไฟล์ rotate .1 .2 .3)
-  ใช้ตอนลบอุปกรณ์เพื่อเก็บกวาดไฟล์ให้หมด
-  """
   base = os.path.join(LOG_DIR, f'device_{device_id}.log')
   return [base] + [f'{base}.{i}' for i in range(1, 6)]
 
 
 def close_device_log_handlers(device_id):
-  """ปิด file handler ของอุปกรณ์นี้ก่อนลบไฟล์ (สำคัญบน Windows ที่ลบไฟล์ซึ่ง
-  ยังถูกเปิดค้างอยู่ไม่ได้)
-  """
   lg = logging.getLogger(f'dev_log_{device_id}')
   for h in list(lg.handlers):
     try:
@@ -184,8 +169,6 @@ class MQTT:
     if subpath == 'logs':
       log_text = msg.payload.decode('utf-8', errors='ignore').strip()
       if log_text:
-        # ผูก log กับ device_id (คงที่ตลอดอายุอุปกรณ์) ไม่ใช่ชื่อเครื่องที่
-        # ผู้ใช้เปลี่ยนได้ ไม่งั้นพอเปลี่ยนชื่อแล้ว log เก่าจะหายไปจากหน้าเว็บ
         device_id = self._resolve_device_id(device_name)
         if device_id is not None:
           append_device_log(device_id, log_text)
@@ -308,9 +291,6 @@ class MQTT:
         logger.error('Error publish delete: %s', e)
 
   def _resolve_device_id(self, device_name: str):
-    """หา device_id จากชื่อเครื่องที่มากับ MQTT topic (cache ไว้ใน device_cache
-    เพื่อไม่ต้อง query database ทุกครั้งที่มี log เข้ามา ซึ่งถี่มาก)
-    """
     cached = self.device_cache.get(device_name, {})
     device_id = cached.get('device_id')
     if device_id is not None:
@@ -425,10 +405,6 @@ class MQTT:
         'door_status': data.get('door_status'),
         'alarm_status': data.get('alarm_status'),
     }
-    # กันฟิลด์ที่ไม่ได้ส่งมาในรอบนี้ (None) ไปเขียนทับค่าดีๆ เดิมบนการ์ด/หน้า
-    # device เช่น ตอนนี้ status topic ไม่มี device_status แล้ว ถ้าไม่กรอง
-    # None ออก การ์ดจะโดนเซ็ต device_status เป็น None ทุกครั้งที่ door/relay
-    # เปลี่ยน ทำให้ badge ขึ้น "DEVICE: None"
     ui_card_payload = {k: v for k, v in raw_payload.items() if v is not None}
 
     if self.on_card_update and device_id and ui_card_payload:

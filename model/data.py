@@ -24,7 +24,6 @@ class Database:
 
     with self._lock:
       cursor = self.db.cursor()
-      # เปิดใช้งาน WAL mode เพื่อรองรับ Concurrency ระหว่าง Thread ได้ดีขึ้น
       cursor.execute('PRAGMA journal_mode=WAL;')
 
       cursor.execute("""CREATE TABLE IF NOT EXISTS devices (
@@ -284,14 +283,7 @@ class Database:
     return dict(row) if row else None
 
   def delete_device(self, device_id: int) -> bool:
-    """ลบอุปกรณ์ พร้อมเก็บกวาดไฟล์ที่เกี่ยวข้องทั้งหมด
-
-    เดิมลบแค่ row ใน database ทำให้ไฟล์รูปใน uploads/ และไฟล์ log ของเครื่องนั้น
-    ค้างอยู่บนดิสก์ตลอดไป (กินพื้นที่เพิ่มเรื่อย ๆ และเป็นข้อมูลที่ไม่มีใคร
-    เข้าถึงได้อีกแล้ว) -> ลบไฟล์ให้ด้วย
-    """
     try:
-      # ดึงรายชื่อไฟล์รูปก่อนลบ row (หลังลบแล้วจะหาไม่ได้อีก)
       image_files = [
           row.get('image_path')
           for row in self.get_logs(device_id)
@@ -313,23 +305,14 @@ class Database:
       return False
 
   def _cleanup_device_files(self, device_id: int, image_files: list):
-    """ลบไฟล์รูปใน uploads/ และไฟล์ log ของอุปกรณ์ที่ถูกลบไปแล้ว
-
-    ทำแบบ best-effort: ถ้าลบไฟล์ไหนไม่ได้ (เช่นถูกเปิดค้างอยู่) แค่ log warning
-    ไม่ throw ออกไป เพราะ row ใน database ถูกลบสำเร็จไปแล้ว
-    """
     upload_dir = getattr(config, 'UPLOAD_DIR', 'uploads')
     for filename in image_files:
-      # ป้องกัน path traversal: ใช้แค่ basename เสมอ ไม่ยอมให้ค่าใน database
-      # พาไปลบไฟล์นอกโฟลเดอร์ uploads
       path = os.path.join(upload_dir, os.path.basename(filename))
       try:
         if os.path.exists(path):
           os.remove(path)
       except Exception as e:
         logger.warning('Could not delete image %s: %s', path, e)
-
-    # ปิด handler ก่อนลบ ไม่งั้นบน Windows จะลบไฟล์ที่ถูกเปิดค้างอยู่ไม่ได้
     try:
       from model.mqtt import close_device_log_handlers, get_device_log_paths
       close_device_log_handlers(device_id)
@@ -357,9 +340,6 @@ class Database:
       return False
 
     device_id = device.get('id')
-
-    # ป้องกันการเปลี่ยนชื่อไปชนกับอุปกรณ์อื่นที่มีอยู่แล้ว (ของเดิมไม่เช็คจุดนี้
-    # ทำให้ถ้าตั้งชื่อซ้ำได้ ระบบจะแยกอุปกรณ์ไม่ออกในภายหลัง)
     if name is not None and name != device.get('name'):
       existing = self.get_device_by_name(name)
       if existing and existing.get('id') != device_id:
@@ -427,7 +407,6 @@ class Database:
     fields = []
     values = []
 
-    # แมปสถานะลงคอลัมน์ของตาราง
     status_mapping = {
         'device_status': device_status,
         'camera': camera_status,
@@ -444,7 +423,6 @@ class Database:
         fields.append(f'{col} = ?')
         values.append(val)
 
-    # อัปเดต timestamp ล่าสุดเสมอ
     fields.append('last_seen = CURRENT_TIMESTAMP')
 
     query = f"UPDATE devices SET {', '.join(fields)} WHERE id = ?"
@@ -509,12 +487,6 @@ class Database:
     return dict(row) if row else None
 
   def base64_to_image(self, base64_string: str, device_id):
-    """บันทึกรูป โดยตั้งชื่อไฟล์จาก device_id ไม่ใช่ชื่อเครื่อง
-
-    เดิมใช้ชื่อเครื่องเป็นส่วนหนึ่งของชื่อไฟล์ ถ้าชื่อมี / \\ : * ? " < > |
-    จะเซฟรูปไม่ได้เลย (เข้า except แล้วคืน None เงียบ ๆ) และพอเปลี่ยนชื่อเครื่อง
-    ไฟล์เก่า-ใหม่ก็ไม่สัมพันธ์กัน
-    """
     upload_dir = getattr(config, 'UPLOAD_DIR', 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
@@ -530,10 +502,7 @@ class Database:
       return None
 
 
-# ชื่อเดิม (ตัวพิมพ์เล็กทั้งหมด) เก็บไว้เพื่อความเข้ากันได้ย้อนหลัง เผื่อมีโค้ด
-# ภายนอกไฟล์นี้ import ชื่อเดิมอยู่
 database = Database
-
 
 if __name__ == '__main__':
   logging.basicConfig(level=logging.INFO)

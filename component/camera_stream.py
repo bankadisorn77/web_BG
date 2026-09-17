@@ -91,36 +91,48 @@ class VideoCard(ui.card):
         """)
 
     def _render_stream_html(self, timestamp: float = None) -> str:
-        src = f'{self.active_stream_url}?t={timestamp}' if timestamp else self.active_stream_url
-        overlay_style = 'block' if getattr(self, 'toggle_switch', None) and self.toggle_switch.value else 'none'
+      src = (
+          f'{self.active_stream_url}?t={timestamp}'
+          if timestamp
+          else self.active_stream_url
+      )
+      overlay_style = (
+          'block'
+          if getattr(self, 'toggle_switch', None) and self.toggle_switch.value
+          else 'none'
+      )
 
-        return f"""
+      return f"""
         <div style="position: relative; width: 100%; height: 100%; display: block;">
             <img id="mjpeg_display" 
                  src="{src}" 
+                 data-base-src="{self.active_stream_url}"
                  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: fill; display: block;" 
-                 onerror="this.style.opacity='0'; setTimeout(()=>{{ this.src='{self.active_stream_url}?t='+new Date().getTime(); this.style.opacity='1'; }}, 1000);" />
+                 onerror="this.style.opacity='0.2'; setTimeout(()=>{{ const base = this.getAttribute('data-base-src') || this.src.split('?')[0]; this.src = base + '?t=' + new Date().getTime(); this.style.opacity='1'; }}, 2000);" />
 
             <svg id="stream_svg_overlay"
                  viewBox="0 0 1000 1000" 
                  preserveAspectRatio="none"
                  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: {overlay_style}; z-index: 10;">
                 
-                <rect x="460" y="56" width="77" height="90" 
-                      fill="none" stroke="#22FF00" stroke-width="3" />
-                <polygon points="459,558 203,352 47,706 307,903" 
-                         fill="none" stroke="#22FF00" stroke-width="3" />
-                <polygon points="547,553 796,335 959,674 712,890" 
-                         fill="none" stroke="#22FF00" stroke-width="3" />
-                <polygon points="184,0 805,0 812,318 503,568 185,334" 
-                         fill="none" stroke="#22FF00" stroke-width="3" />
+                <rect x="460" y="56" width="77" height="90" fill="none" stroke="#22FF00" stroke-width="3" />
+                <polygon points="459,558 203,352 47,706 307,903" fill="none" stroke="#22FF00" stroke-width="3" />
+                <polygon points="547,553 796,335 959,674 712,890" fill="none" stroke="#22FF00" stroke-width="3" />
+                <polygon points="184,0 805,0 812,318 503,568 185,334" fill="none" stroke="#22FF00" stroke-width="3" />
             </svg>
         </div>
         """
 
     def reload_stream(self):
-        new_src = f"{self.active_stream_url}?t={time.time()}"
+        new_src = f'{self.active_stream_url}?t={time.time()}'
         ui.run_javascript(f"""
-            const img = document.getElementById("mjpeg_display");
-            if (img) img.src = "{new_src}";
-        """)
+                const img = document.getElementById("mjpeg_display");
+                if (img) {{
+                    img.src = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' fill='%231e293b'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-size='20'%3ENO SIGNAL%3C/text%3E%3C/svg%3E";
+                    
+                    setTimeout(() => {{
+                        img.setAttribute("data-base-src", "{self.active_stream_url}");
+                        img.src = "{new_src}";
+                    }}, 50);
+                }}
+            """)

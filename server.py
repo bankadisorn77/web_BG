@@ -30,7 +30,15 @@ PAGE_CALLBACKS = set()
 DEVICE_LIST_CALLBACKS = set()
 LOG_CALLBACKS = {} 
 TERMINAL_LOG_CALLBACKS = {}
-
+OFFLINE_FRAME = (
+    b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C\x00'
+    b'\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19'
+    b'\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.\' ",#\x1c\x1c(7),01444'
+    b"\x1f'9=82<.342\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00"
+    b'\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01'
+    b'\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xbf'
+    b'\x00\xff\xd9'
+)
 
 def trigger_card_update(device_id, payload):
   for cb in list(CARD_CALLBACKS):
@@ -276,18 +284,44 @@ async def stream_device(request: Request, device_id: int, cam_index: int):
 
   def frame_generator():
     stream_hub.acquire(key, source_url)
+    yield (
+        b'--frame\r\n'
+        b'Content-Type: image/jpeg\r\n'
+        b'Content-Length: '
+        + str(len(OFFLINE_FRAME)).encode()
+        + b'\r\n\r\n'
+        + OFFLINE_FRAME
+        + b'\r\n'
+    )
+
     try:
       last_sent = None
+      no_frame_count = 0
       while True:
         frame = stream_hub.get_frame(key)
+
         if frame is not None and frame is not last_sent:
           last_sent = frame
+          no_frame_count = 0
           yield (
               b'--frame\r\n'
               b'Content-Type: image/jpeg\r\n'
               b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n'
               + frame + b'\r\n'
           )
+        elif frame is None:
+          no_frame_count += 1
+          if no_frame_count >= 25 and last_sent != OFFLINE_FRAME:
+            last_sent = OFFLINE_FRAME
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n'
+                b'Content-Length: '
+                + str(len(OFFLINE_FRAME)).encode()
+                + b'\r\n\r\n'
+                + OFFLINE_FRAME
+                + b'\r\n'
+            )
         time.sleep(0.04)
     finally:
       stream_hub.release(key)
@@ -311,4 +345,19 @@ if __name__ == '__main__':
       host=config.SERVER_HOST,
       port=config.SERVER_PORT,
       reload=True,
+      reload_dirs=[
+          'component',
+          'config',
+          'model',
+          'page',
+      ],
+      # reload_excludes=[
+      #     '*.db',
+      #     '*.db-wal',
+      #     '*.db-shm',
+      #     '*.log',
+      #     'data/*',
+      #     'server_device_logs/*',
+      #     'uploads/*',
+      # ],
   )
