@@ -8,25 +8,71 @@
           "key": "camera",
           "label": "CAMERA",
           "default": "OFF",
-          "color_map": {"ONLINE": "green", "OFF": "grey", "ERROR": "red"}
+          "color_map": {
+            "ONLINE": "green",
+            "OFF": "grey",
+            "ERROR": "red"
+          }
         },
         {
           "key": "gpio",
           "label": "GPIO",
           "default": "OFF",
-          "color_map": {"ONLINE": "green", "OFF": "grey", "ERROR": "red"}
+          "color_map": {
+            "ONLINE": "green",
+            "OFF": "grey",
+            "ERROR": "red"
+          }
         },
         {
           "key": "program",
           "label": "AI",
           "default": "OFF",
-          "color_map": {"RUNNING": "green", "OFF": "grey", "ERROR": "red"}
+          "color_map": {
+            "RUNNING": "green",
+            "OFF": "grey",
+            "ERROR": "red"
+          }
         },
         {
           "key": "device_status",
           "label": "DEVICE",
           "default": "INACTIVE",
-          "color_map": {"ACTIVE": "green", "INACTIVE": "grey", "ERROR": "red"}
+          "color_map": {
+            "ACTIVE": "green",
+            "INACTIVE": "grey",
+            "ERROR": "red"
+          }
+        },
+        {
+          "key": "project_status",
+          "label": "PROJECT",
+          "default": "OFF",
+          "color_map": {
+            "RUNNING": "green",
+            "IDLE": "grey",
+            "ERROR": "red"
+          }
+        },
+        {
+          "key": "camera_1",
+          "label": "CAM 01",
+          "default": "OFF",
+          "color_map": {
+            "ONLINE": "green",
+            "OFF": "grey",
+            "ERROR": "red"
+          }
+        },
+        {
+          "key": "camera_2",
+          "label": "CAM 02",
+          "default": "OFF",
+          "color_map": {
+            "ONLINE": "green",
+            "OFF": "grey",
+            "ERROR": "red"
+          }
         }
       ]
     },
@@ -38,119 +84,160 @@
           "key": "door_status",
           "label": "Door Sensor",
           "default": "OFF",
-          "color_map": {"OPEN": "orange", "CLOSED": "green", "OFF": "grey"}
+          "color_map": {
+            "OPEN": "orange",
+            "CLOSED": "green",
+            "OFF": "grey"
+          }
         },
         {
           "key": "alarm_status",
           "label": "Alarm Siren",
           "default": "OFF",
-          "color_map": {"ON": "red", "OFF": "grey"}
+          "color_map": {
+            "ON": "red",
+            "OFF": "grey"
+          }
         },
         {
           "key": "relay_status",
           "label": "Main Relay",
           "default": "OFF",
-          "color_map": {"ON": "green", "OFF": "grey"}
+          "color_map": {
+            "ON": "green",
+            "OFF": "grey"
+          }
         },
         {
           "key": "light_status",
           "label": "Tower Light",
           "default": "OFF",
-          "color_map": {"ON": "green", "OFF": "grey"}
+          "color_map": {
+            "ON": "green",
+            "OFF": "grey"
+          }
         }
       ]
     }
   ],
-  "webserver":{
-    "hearder":{
-      "project_name":"BG System",
-      "project_title":"Backgrinding Monitoring"
+  "webserver": {
+    "hearder": {
+      "project_name": "BG System",
+      "project_title": "Backgrinding Monitoring"
     },
-    "database":{
-      "devices_table":[
+    "database": {
+      "devices_table": [
         {
-          "key":"gpio",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "gpio",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"camera",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "camera",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"program",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "program",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"device_status",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "device_status",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"door_status",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "door_status",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"alarm_status",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "alarm_status",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"relay_status",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "relay_status",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"light_status",
-          "title":"status",
-          "type":"TEXT",
-          "null":false,
-          "default":"OFF"
+          "key": "light_status",
+          "title": "status",
+          "type": "TEXT",
+          "null": false,
+          "default": "OFF"
         },
         {
-          "key":"input_channel",
-          "title":"IO",
-          "type":"INTEGER",
-          "null":false,
-          "default":0
+          "key": "input_channel",
+          "title": "IO",
+          "type": "INTEGER",
+          "null": false,
+          "default": 0
         },
         {
-          "key":"output_alarm_channel",
-          "title":"IO",
-          "type":"INTEGER",
-          "null":false,
-          "default":0
+          "key": "output_alarm_channel",
+          "title": "IO",
+          "type": "INTEGER",
+          "null": false,
+          "default": 0
         },
         {
-          "key":"output_relay_channel",
-          "title":"IO",
-          "type":"INTEGER",
-          "null":false,
-          "default":1
+          "key": "output_relay_channel",
+          "title": "IO",
+          "type": "INTEGER",
+          "null": false,
+          "default": 1
         },
         {
-          "key":"output_light_channel",
-          "title":"IO",
-          "type":"INTEGER",
-          "null":false,
-          "default":2
+          "key": "output_light_channel",
+          "title": "IO",
+          "type": "INTEGER",
+          "null": false,
+          "default": 2
+        },
+        {
+          "key": "project_id",
+          "title": "PROJECT",
+          "type": "TEXT",
+          "null": true,
+          "default": null
+        },
+        {
+          "key": "project_config",
+          "title": "PROJECT CONFIG",
+          "type": "TEXT",
+          "null": true,
+          "default": null
+        },
+        {
+          "key": "camera_config",
+          "title": "CAMERA CONFIG",
+          "type": "TEXT",
+          "null": true,
+          "default": null
+        },
+        {
+          "key": "io_config",
+          "title": "IO CONFIG",
+          "type": "TEXT",
+          "null": true,
+          "default": null
         }
       ]
     }
