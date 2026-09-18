@@ -214,11 +214,10 @@ async def register_device(payload: dict = Body(...)):
     name = payload.get('name')
     ip_address = payload.get('ip_address')
     mac_address = payload.get('mac_address')
-    input_channel = payload.get('input_channel', 0)
     model_path = payload.get('model_path', '')
     save_image_path = payload.get('save_image_path', '')
     mqtt_broker = payload.get('mqtt_broker', '')
-    output_channel = payload.get('output_channel', {})
+    io_channel = payload.get('output_channel', {})
     # if not output_channel:
     #   output_channel = {
     #       k: v for k, v in payload.items() if k.startswith('output_')
@@ -227,8 +226,7 @@ async def register_device(payload: dict = Body(...)):
         name=name,
         ip_address=ip_address,
         mac_address=mac_address,
-        input_channel=input_channel,
-        output_channel=output_channel,
+        io_channel=io_channel,
         model_path=model_path,
         save_image_path=save_image_path,
         mqtt_broker=mqtt_broker,

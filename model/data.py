@@ -2,10 +2,11 @@ import base64
 from datetime import datetime
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import threading
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 import bcrypt
 import fastapi
 
@@ -13,11 +14,19 @@ import config.config as config
 
 logger = logging.getLogger(__name__)
 
+# Pattern สำหรับตรวจสอบความปลอดภัยของ Identifier ใน SQL (Column/Table Name)
+IDENTIFIER_REGEX = re.compile(r'^[a-zA-Z0-9_]+$')
+
 
 class Database:
 
   def __init__(self, db_url: str):
-    os.makedirs(os.path.dirname(db_url) or '.', exist_ok=True)
+    db_dir = os.path.dirname(db_url)
+    if db_dir:
+      os.makedirs(db_dir, exist_ok=True)
+    else:
+      os.makedirs('.', exist_ok=True)
+
     self.db = sqlite3.connect(db_url, check_same_thread=False, timeout=15)
     self.db.row_factory = sqlite3.Row
     self.schema = config.WEB_SCHEMA.get('webserver', {})
@@ -26,42 +35,55 @@ class Database:
     self._lock = threading.Lock()
 
     with self._lock:
-      cursor = self.db.cursor()
-      cursor.execute('PRAGMA journal_mode=WAL;')
+      try:
+        cursor = self.db.cursor()
+        cursor.execute('PRAGMA journal_mode=WAL;')
 
-      self.CreateDeviceTable(cursor=cursor)
+        self.CreateDeviceTable(cursor=cursor)
 
-      cursor.execute("""CREATE TABLE IF NOT EXISTS users (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              username TEXT NOT NULL UNIQUE,
-              password TEXT NOT NULL,
-              role TEXT NOT NULL DEFAULT 'user',
-              last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )""")
-      cursor.execute("""CREATE TABLE IF NOT EXISTS logs (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              device_id INTEGER NOT NULL,
-              image_path TEXT NOT NULL,
-              detected_objects TEXT,
-              log_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              FOREIGN KEY (device_id) REFERENCES devices (id)
-          )""")
-      self.db.commit()
+        cursor.execute("""CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                image_path TEXT NOT NULL,
+                detected_objects TEXT,
+                log_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices (id)
+            )""")
+        self.db.commit()
+      except Exception as e:
+        self.db.rollback()
+        logger.error('Error during database initialization: %s', e)
+        raise e
 
+  # ================= Helper Security methods =================
+  def _get_valid_table_columns(self, cursor: sqlite3.Cursor, table_name: str) -> set:
+    if not IDENTIFIER_REGEX.match(table_name):
+      return set()
+    cursor.execute(f'PRAGMA table_info({table_name})')
+    return {row[1] for row in cursor.fetchall()}
 
   def ensure_default_admin(self, username: str, password: str, role: str):
     with self._lock:
       cursor = self.db.cursor()
       cursor.execute('SELECT COUNT(*) FROM users')
-      (count,) = cursor.fetchone()
+      count_row = cursor.fetchone()
+      count = count_row[0] if count_row else 0
       if count > 0:
         return
+
     logger.warning(
         "No users found. Creating default admin account '%s'."
         ' Please log in and change the password immediately.',
         username,
     )
-    self.register_user(username, password,role)
+    self.register_user(username, password, role)
 
   # ================= User management methods =================
   def register_user(self, username: str, password: str, role: str):
@@ -70,35 +92,49 @@ class Database:
       try:
         cursor = self.db.cursor()
         cursor.execute(
-                  'SELECT password FROM users WHERE username = ?', (username,)
-              )
+            'SELECT 1 FROM users WHERE username = ?', (username,)
+        )
         result = cursor.fetchone()
         if result:
-          return False,'This user is already registered.'
+          return False, 'This user is already registered.'
         cursor.execute(
-            'INSERT INTO users (username, password,role) VALUES (?, ?, ?)',
-            (username, hashed_password,role),
+            'INSERT INTO users (username, password, role) VALUES (?, ?, ?)',
+            (username, hashed_password, role),
         )
         self.db.commit()
-        return True,''
+        return True, ''
       except Exception as e:
-        return False,e
+        self.db.rollback()
+        logger.error('Error registering user %s: %s', username, e)
+        return False, e
 
   def authenticate_user(self, username: str, password: str) -> Tuple[bool, Optional[str]]:
     with self._lock:
-        cursor = self.db.cursor()
-        cursor.execute(
-            'SELECT password, role FROM users WHERE username = ?', (username,)
-        )
-        result = cursor.fetchone()
-    if result:
-        stored_hashed_password = result[0]
-        user_role = result[1]
-        
-        if self.verify_password(password, stored_hashed_password):
-            return True, user_role  
+      cursor = self.db.cursor()
+      cursor.execute(
+          'SELECT password, role FROM users WHERE username = ?', (username,)
+      )
+      result = cursor.fetchone()
 
-    return False, None  
+    if result:
+      stored_hashed_password = result['password']
+      user_role = result['role']
+
+      if self.verify_password(password, stored_hashed_password):
+        # อัปเดตเวลา last_login
+        try:
+          with self._lock:
+            cur = self.db.cursor()
+            cur.execute(
+                'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = ?',
+                (username,),
+            )
+            self.db.commit()
+        except Exception as e:
+          logger.warning('Could not update last_login for %s: %s', username, e)
+        return True, user_role
+
+    return False, None
 
   def hash_password(self, password: str) -> str:
     salt = bcrypt.gensalt()
@@ -106,65 +142,76 @@ class Database:
     return hashed.decode('utf-8')
 
   def verify_password(self, password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    try:
+      return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    except Exception as e:
+      logger.error('Password verification error: %s', e)
+      return False
 
   def get_all_user(self):
     with self._lock:
       cursor = self.db.cursor()
-      cursor.execute(
-        'SELECT * FROM users'
-      )
+      cursor.execute('SELECT id, username, role, last_login FROM users')
       return [dict(row) for row in cursor.fetchall()]
-    
-  def edit_user(self,id,username=None,password=None,role=None):
-      update_fields = []
-      params = []
-      if username is not None:
-        update_fields.append('username = ?')
-        params.append(username)
-      if password is not None:
-        update_fields.append('password = ?')
-        hash = self.hash_password(password)
-        params.append(hash)
-      if role is not None:
-        update_fields.append('role = ?')
-        params.append(role)
-      if not update_fields:
-        return False
-      
-      query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
-      params.append(id)
-      with self._lock:
-          cursor = self.db.cursor()
-          try:
-            cursor.execute(query,tuple(params))
-            return True,'UPDATE SUCCESFUL'
-          except Exception as e:
-            return False,e
-          
+
+  def edit_user(self, id, username=None, password=None, role=None):
+    update_fields = []
+    params = []
+
+    if username is not None:
+      update_fields.append('username = ?')
+      params.append(username)
+    if password is not None:
+      update_fields.append('password = ?')
+      hash_pwd = self.hash_password(password)
+      params.append(hash_pwd)
+    if role is not None:
+      update_fields.append('role = ?')
+      params.append(role)
+
+    if not update_fields:
+      return False, 'No fields to update'
+
+    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+    params.append(id)
+
+    with self._lock:
+      cursor = self.db.cursor()
+      try:
+        cursor.execute(query, tuple(params))
+        self.db.commit()
+        return True, 'UPDATE SUCCESFUL'
+      except sqlite3.IntegrityError as e:
+        self.db.rollback()
+        return False, f'Username already exists: {e}'
+      except Exception as e:
+        self.db.rollback()
+        logger.error('Error updating user id %s: %s', id, e)
+        return False, e
+
   def delete_user(self, user_id: int):
-      with self._lock:
-          try:
-              cursor = self.db.cursor()
-              cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
-              self.db.commit()
-              
-              return True, 'DELETED'
-          except Exception as e:
-              self.db.rollback()
-              return False, str(e)
+    with self._lock:
+      try:
+        cursor = self.db.cursor()
+        cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        self.db.commit()
+        return True, 'DELETED'
+      except Exception as e:
+        self.db.rollback()
+        logger.error('Error deleting user id %s: %s', user_id, e)
+        return False, str(e)
+
   # ================= Device management methods =================
   def register_device(
-    self,
-    name: str,
-    ip_address: str,
-    mac_address: str,
-    input_channel: int,
-    output_channel: dict,
-    model_path: str,
-    save_image_path: str,
-    mqtt_broker: str,
-) -> str:
+      self,
+      name: str,
+      ip_address: str,
+      mac_address: str,
+      io_channel: dict,
+      model_path: str,
+      save_image_path: str,
+      mqtt_broker: str,
+  ) -> str:
     with self._lock:
       cursor = self.db.cursor()
       cursor.execute('SELECT 1 FROM devices WHERE name = ?', (name,))
@@ -173,11 +220,12 @@ class Database:
             status_code=400, detail=f"Device name '{name}' already exists"
         )
 
+      valid_cols = self._get_valid_table_columns(cursor, 'devices')
+
       base_cols = [
           'name',
           'ip_address',
           'mac_address',
-          'input_channel',
           'model_path',
           'save_image_path',
           'mqtt_broker',
@@ -186,13 +234,19 @@ class Database:
           name,
           ip_address,
           mac_address,
-          input_channel,
           model_path,
           save_image_path,
           mqtt_broker,
       ]
-      extra_cols = list(output_channel.keys())
-      extra_vals = list(output_channel.values())
+
+      extra_cols = []
+      extra_vals = []
+      for k, v in io_channel.items():
+        if IDENTIFIER_REGEX.match(k) and k in valid_cols:
+          extra_cols.append(k)
+          extra_vals.append(v)
+        else:
+          logger.warning('Skipping invalid or nonexistent column in register_device: %s', k)
 
       all_cols = base_cols + extra_cols + ['api_key']
       columns_str = ', '.join(all_cols)
@@ -210,7 +264,14 @@ class Database:
           self.db.commit()
           return api_key
         except sqlite3.IntegrityError:
+          self.db.rollback()
           continue
+        except Exception as e:
+          self.db.rollback()
+          logger.error('Error inserting device: %s', e)
+          raise fastapi.HTTPException(
+              status_code=500, detail=f'Database error: {e}'
+          )
 
     raise fastapi.HTTPException(
         status_code=400,
@@ -220,7 +281,7 @@ class Database:
         ),
     )
 
-  def verify_api_key(self, api_key: str) -> dict:
+  def verify_api_key(self, api_key: str) -> Optional[dict]:
     if not api_key:
       return None
     with self._lock:
@@ -229,7 +290,7 @@ class Database:
       row = cursor.fetchone()
     return dict(row) if row else None
 
-  def get_device_by_name(self, name: str) -> dict:
+  def get_device_by_name(self, name: str) -> Optional[dict]:
     with self._lock:
       cursor = self.db.cursor()
       cursor.execute('SELECT * FROM devices WHERE name = ?', (name,))
@@ -265,7 +326,7 @@ class Database:
       cursor.execute('SELECT * FROM devices')
       return [dict(row) for row in cursor.fetchall()]
 
-  def get_device_by_id(self, device_id: int):
+  def get_device_by_id(self, device_id: int) -> Optional[dict]:
     with self._lock:
       cursor = self.db.cursor()
       cursor.execute('SELECT * FROM devices WHERE id = ?', (device_id,))
@@ -291,18 +352,29 @@ class Database:
         self._cleanup_device_files(device_id, image_files)
       return deleted
     except Exception as e:
+      self.db.rollback()
       logger.error('[Database Error] delete_device: %s', e)
       return False
 
   def _cleanup_device_files(self, device_id: int, image_files: list):
     upload_dir = getattr(config, 'UPLOAD_DIR', 'uploads')
+    abs_upload_dir = os.path.abspath(upload_dir)
+
     for filename in image_files:
-      path = os.path.join(upload_dir, os.path.basename(filename))
-      try:
-        if os.path.exists(path):
-          os.remove(path)
-      except Exception as e:
-        logger.warning('Could not delete image %s: %s', path, e)
+      if not filename:
+        continue
+      safe_filename = os.path.basename(filename)
+      path = os.path.abspath(os.path.join(abs_upload_dir, safe_filename))
+
+      if os.path.commonpath([abs_upload_dir, path]) == abs_upload_dir:
+        try:
+          if os.path.exists(path):
+            os.remove(path)
+        except Exception as e:
+          logger.warning('Could not delete image %s: %s', path, e)
+      else:
+        logger.error('Security alert: Path traversal attempt blocked for: %s', filename)
+
     try:
       from model.mqtt import close_device_log_handlers, get_device_log_paths
       close_device_log_handlers(device_id)
@@ -331,16 +403,14 @@ class Database:
 
     with self._lock:
       cursor = self.db.cursor()
-      cursor.execute('PRAGMA table_info(devices)')
-      valid_columns = {
-          row[1] for row in cursor.fetchall() if row[1] not in ('id', 'api_key')
-      }
+      valid_columns = self._get_valid_table_columns(cursor, 'devices')
+      valid_columns.difference_update({'id', 'api_key'})
 
       update_fields = []
       params = []
 
       for key, value in payload.items():
-        if key in valid_columns and value is not None:
+        if IDENTIFIER_REGEX.match(key) and key in valid_columns and value is not None:
           update_fields.append(f'{key} = ?')
           params.append(value)
 
@@ -350,8 +420,13 @@ class Database:
       query = f"UPDATE devices SET {', '.join(update_fields)} WHERE id = ?"
       params.append(device_id)
 
-      cursor.execute(query, tuple(params))
-      self.db.commit()
+      try:
+        cursor.execute(query, tuple(params))
+        self.db.commit()
+      except Exception as e:
+        self.db.rollback()
+        logger.error('Error updating device config for id %s: %s', device_id, e)
+        return False
 
     return True
 
@@ -367,18 +442,18 @@ class Database:
 
     with self._lock:
       cursor = self.db.cursor()
-      cursor.execute('PRAGMA table_info(devices)')
-      valid_columns = {row[1] for row in cursor.fetchall()}
+      valid_columns = self._get_valid_table_columns(cursor, 'devices')
+      valid_columns.difference_update({'id', 'api_key'})
 
       fields = []
       values = []
 
       for key, val in kwargs.items():
-        if val is not None and key in valid_columns and key not in ('id', 'api_key'):
+        if val is not None and IDENTIFIER_REGEX.match(key) and key in valid_columns:
           fields.append(f'{key} = ?')
           values.append(val)
 
-      if 'last_seen' in valid_columns:
+      if 'last_seen' in self._get_valid_table_columns(cursor, 'devices'):
         fields.append('last_seen = CURRENT_TIMESTAMP')
 
       if not fields:
@@ -387,8 +462,13 @@ class Database:
       query = f"UPDATE devices SET {', '.join(fields)} WHERE id = ?"
       values.append(device_id)
 
-      cursor.execute(query, tuple(values))
-      self.db.commit()
+      try:
+        cursor.execute(query, tuple(values))
+        self.db.commit()
+      except Exception as e:
+        self.db.rollback()
+        logger.error('Error updating device status for id %s: %s', device_id, e)
+        return None
 
     return device_id
 
@@ -421,6 +501,7 @@ class Database:
         self.db.commit()
       return True
     except Exception as e:
+      self.db.rollback()
       logger.error('Error adding log: %s', e)
       return False
 
@@ -433,7 +514,7 @@ class Database:
       )
       return [dict(row) for row in cursor.fetchall()]
 
-  def get_latest_log(self, device_id: int):
+  def get_latest_log(self, device_id: int) -> Optional[dict]:
     with self._lock:
       cursor = self.db.cursor()
       cursor.execute(
@@ -444,24 +525,31 @@ class Database:
       row = cursor.fetchone()
     return dict(row) if row else None
 
-  def base64_to_image(self, base64_string: str, device_id):
+  def base64_to_image(self, base64_string: str, device_id) -> Optional[str]:
     upload_dir = getattr(config, 'UPLOAD_DIR', 'uploads')
-    os.makedirs(upload_dir, exist_ok=True)
+    abs_upload_dir = os.path.abspath(upload_dir)
+    os.makedirs(abs_upload_dir, exist_ok=True)
+
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
     filename = f'device_{device_id}_{timestamp}.jpg'
-    output_path = os.path.join(upload_dir, filename)
+    output_path = os.path.join(abs_upload_dir, filename)
 
     try:
+      # จัดการกรณี base64 มี data URI scheme ติดมาด้วย
+      if ',' in base64_string:
+        base64_string = base64_string.split(',', 1)[1]
+
+      image_bytes = base64.b64decode(base64_string)
+
       with open(output_path, 'wb') as f:
-        f.write(base64.b64decode(base64_string))
+        f.write(image_bytes)
       return filename
     except Exception as e:
-      logger.error('Error saving image: %s', e)
+      logger.error('Error saving image for device %s: %s', device_id, e)
       return None
 
   # ================= create table =================
   def CreateDeviceTable(self, cursor):
-    
     columns = []
 
     base_col = [
@@ -476,15 +564,26 @@ class Database:
         'last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
     ]
 
+    ALLOWED_SQL_TYPES = {'TEXT', 'INTEGER', 'REAL', 'BLOB', 'NUMERIC'}
+
     for col in self.columns_schema:
-      key = col['key']
+      key = col.get('key', '')
+      if not IDENTIFIER_REGEX.match(key):
+        logger.error('Invalid column name rejected: %s', key)
+        continue
+
       col_type = col.get('type', 'TEXT').upper()
+      if col_type not in ALLOWED_SQL_TYPES:
+        col_type = 'TEXT'
+
       is_null = col.get('null', False)
       null_clause = '' if is_null else 'NOT NULL'
 
       default_val = col.get('default')
       if isinstance(default_val, str):
-        default_clause = f"DEFAULT '{default_val}'"
+        # Escape single quote ใน default value
+        safe_default = default_val.replace("'", "''")
+        default_clause = f"DEFAULT '{safe_default}'"
       elif default_val is not None:
         default_clause = f'DEFAULT {default_val}'
       else:
@@ -496,14 +595,13 @@ class Database:
           )
       )
       columns.append(col_def)
+
     all_col = base_col + columns
     create_table_sql = f"CREATE TABLE IF NOT EXISTS devices ({', '.join(all_col)})"
 
     cursor.execute(create_table_sql)
 
 
-
-          
 database = Database
 
 if __name__ == '__main__':

@@ -189,7 +189,6 @@ class MQTT:
     old_state = cached_info.setdefault('state', {})
     has_changed = False
 
-    # ตรวจสอบการเปลี่ยนสถานะตามคีย์จริงจาก Schema
     for key in self.status_keys:
       new_value = data.get(key)
       if new_value is not None and new_value != old_state.get(key):

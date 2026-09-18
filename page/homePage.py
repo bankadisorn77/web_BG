@@ -19,7 +19,7 @@ class homePage:
     self.cards_id = {}
     self.on_device_update = on_device_update
     self.on_device_update_all = on_device_update_all
-    self.target_delete_device = None  # เก็บเครื่องที่กำลังจะลบ
+    self.target_delete_device = None 
 
     self.device = self.database.get_all_devices() if self.database else []
     (
