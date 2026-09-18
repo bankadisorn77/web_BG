@@ -54,9 +54,13 @@ class Database:
                 device_id INTEGER NOT NULL,
                 image_path TEXT NOT NULL,
                 detected_objects TEXT,
+                cycle_id TEXT,
+                camera_id TEXT,
+                pipeline_id TEXT,
                 log_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (device_id) REFERENCES devices (id)
             )""")
+        self._ensure_log_columns(cursor)
         self.db.commit()
       except Exception as e:
         self.db.rollback()
@@ -495,6 +499,9 @@ class Database:
       api_key: str,
       image_input_path: str,
       detected_objects: str = None,
+      cycle_id: str = None,
+      camera_id: str = None,
+      pipeline_id: str = None,
   ) -> bool:
     device = self.verify_api_key(api_key)
     if not device:
@@ -566,6 +573,12 @@ class Database:
       return None
 
   # ================= create table =================
+  def _ensure_log_columns(self, cursor):
+    existing = self._get_valid_table_columns(cursor, 'logs')
+    for key in ('cycle_id', 'camera_id', 'pipeline_id'):
+      if key not in existing:
+        cursor.execute('ALTER TABLE logs ADD COLUMN {} TEXT'.format(key))
+
   def _ensure_schema_columns(self, cursor):
     """Add newly configured device columns to existing SQLite databases."""
     valid_types = {'TEXT', 'INTEGER', 'REAL', 'BLOB', 'NUMERIC'}
