@@ -73,6 +73,12 @@
             "OFF": "grey",
             "ERROR": "red"
           }
+        },
+        {
+          "key": "camera_status",
+          "label": "CAMERAS",
+          "default": "{}",
+          "color_map": {}
         }
       ]
     },
@@ -235,6 +241,13 @@
         {
           "key": "io_config",
           "title": "IO CONFIG",
+          "type": "TEXT",
+          "null": true,
+          "default": null
+        },
+        {
+          "key": "camera_status",
+          "title": "CAMERA STATUS",
           "type": "TEXT",
           "null": true,
           "default": null
