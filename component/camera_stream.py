@@ -3,7 +3,7 @@ from typing import List, Union
 from nicegui import ui
 
 class VideoCard(ui.card):
-    def __init__(self, stream_urls: Union[List[str], str]):
+    def __init__(self, stream_urls: Union[List[str], str], camera_labels: List[str] = None):
         super().__init__()
         self.classes('w-full max-w-[1500px] p-4 shadow-md bg-white rounded-xl')
         
@@ -13,6 +13,13 @@ class VideoCard(ui.card):
             self.stream_urls = stream_urls or []
 
         self.current_index = 0
+        self.camera_labels = camera_labels or [
+            f"CAM {idx + 1:02d}" for idx in range(len(self.stream_urls))
+        ]
+        if len(self.camera_labels) != len(self.stream_urls):
+            self.camera_labels = [
+                f"CAM {idx + 1:02d}" for idx in range(len(self.stream_urls))
+            ]
         self.active_stream_url = self.stream_urls[0] if self.stream_urls else ''
         self.camera_buttons = []
         self.camera_dots = []  
@@ -52,7 +59,7 @@ class VideoCard(ui.card):
                       f'px-4 py-2 rounded-xl transition-all duration-200 flex items-center gap-2 text-sm {btn_theme}'
                   ) as btn:
                       icon = ui.icon('videocam').classes(f'text-base {content_color}')
-                      label = ui.label(f'CAM {idx + 1:02d}').classes(f' ml-2 tracking-wide text-xs {content_color}')
+                      label = ui.label(self.camera_labels[idx]).classes(f' ml-2 tracking-wide text-xs {content_color}')
                       dot_style = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' if is_active else 'bg-slate-300'
                       dot = ui.element('span').classes(f'ml-2 w-2 h-2 rounded-full {dot_style} transition-colors')
                       self.camera_buttons.append((btn, icon, label, dot))
