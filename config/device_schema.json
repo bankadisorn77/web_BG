@@ -25,7 +25,7 @@
           }
         },
         {
-          "key": "program",
+          "key": "program_status",
           "label": "AI",
           "default": "OFF",
           "color_map": {
@@ -148,7 +148,7 @@
           "default": "OFF"
         },
         {
-          "key": "program",
+          "key": "program_status",
           "title": "status",
           "type": "TEXT",
           "null": false,
