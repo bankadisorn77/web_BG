@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from component.camera_stream import VideoCard
 from component.header import AppHeader
 from component.result_display import ResultDisplay
@@ -38,7 +39,20 @@ class devicePage:
     self.ip_address = (
         self.device.get('ip_address') if self.device else 'localhost'
     )
-    self.camera_indexes = [1, 2]
+    # Camera UI is generated from Edge registration data.
+    self.camera_config = self._load_json_config(self.device.get('camera_config'))
+    if isinstance(self.camera_config, list) and self.camera_config:
+      self.camera_indexes = list(range(1, len(self.camera_config) + 1))
+      self.camera_labels = [
+          str(item.get('id', f'CAM {idx:02d}')).upper()
+          if isinstance(item, dict) else f'CAM {idx:02d}'
+          for idx, item in enumerate(self.camera_config, start=1)
+      ]
+    else:
+      # Backward-compatible fallback for existing devices.
+      self.camera_indexes = [1, 2]
+      self.camera_labels = ['CAM 01', 'CAM 02']
+
     self.camera_count = len(self.camera_indexes)
     self.stream_url = [
         f'/stream/{self.device_id}/{idx}' for idx in self.camera_indexes
@@ -63,7 +77,7 @@ class devicePage:
     with ui.row().classes('w-full px-10 py-1 gap-8 items-start no-wrap'):
 
       with ui.column().classes('w-3/4 gap-6'):
-        VideoCard(stream_urls=self.stream_url)
+        VideoCard(stream_urls=self.stream_url, camera_labels=self.camera_labels)
 
       with ui.column().classes('w-1/4 gap-6'):
         with ui.card().classes('w-full p-6 shadow-md bg-white rounded-xl'):
@@ -141,6 +155,17 @@ class devicePage:
       self.on_log_update(self.log_update)
     if self.on_device_update:
       self.on_device_update(self.sync_dashboard)
+
+  @staticmethod
+  def _load_json_config(value):
+    if not value:
+      return None
+    if isinstance(value, (dict, list)):
+      return value
+    try:
+      return json.loads(value)
+    except (TypeError, ValueError):
+      return None
 
   def handle_incoming_realtime_log(self, message: str):
     self.terminal.write(f'{message}')
