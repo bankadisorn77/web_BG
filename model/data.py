@@ -40,6 +40,7 @@ class Database:
         cursor.execute('PRAGMA journal_mode=WAL;')
 
         self.CreateDeviceTable(cursor=cursor)
+        self._ensure_schema_columns(cursor)
 
         cursor.execute("""CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,6 +212,10 @@ class Database:
       model_path: str,
       save_image_path: str,
       mqtt_broker: str,
+      project_id: str = None,
+      project_config: str = None,
+      camera_config: str = None,
+      io_config: str = None,
   ) -> str:
     with self._lock:
       cursor = self.db.cursor()
@@ -238,6 +243,18 @@ class Database:
           save_image_path,
           mqtt_broker,
       ]
+
+      optional_values = {
+          'project_id': project_id,
+          'project_config': project_config,
+          'camera_config': camera_config,
+          'io_config': io_config,
+      }
+      for key, value in optional_values.items():
+        if key in valid_cols and value is not None:
+          base_cols.append(key)
+          base_vals.append(value)
+
 
       extra_cols = []
       extra_vals = []
@@ -549,6 +566,21 @@ class Database:
       return None
 
   # ================= create table =================
+  def _ensure_schema_columns(self, cursor):
+    """Add newly configured device columns to existing SQLite databases."""
+    valid_types = {'TEXT', 'INTEGER', 'REAL', 'BLOB', 'NUMERIC'}
+    existing = self._get_valid_table_columns(cursor, 'devices')
+    for col in self.columns_schema:
+      key = col.get('key', '')
+      if not IDENTIFIER_REGEX.match(key) or key in existing:
+        continue
+      col_type = str(col.get('type', 'TEXT')).upper()
+      if col_type not in valid_types:
+        col_type = 'TEXT'
+      # New optional columns deliberately default to NULL so old devices remain valid.
+      cursor.execute('ALTER TABLE devices ADD COLUMN {} {}'.format(key, col_type))
+      existing.add(key)
+
   def CreateDeviceTable(self, cursor):
     columns = []
 
