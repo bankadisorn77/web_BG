@@ -115,7 +115,7 @@ class devicePage:
           ):
             for section in self.device_schema:
               for item in section.get('items', []):
-                if item['key'] == 'program':
+                if item['key'] == 'program_status':
                   continue
 
                 key = item['key']
@@ -177,7 +177,7 @@ class devicePage:
   def sync_dashboard(self):
     self.device = self.database.get_device_by_id(self.device_id) or {}
     device_status = self.device.get('device_status', 'INACTIVE')
-    program_status = self.device.get('program', 'OFF')
+    program_status = self.device.get('program_status', self.device.get('program', 'OFF'))
 
     if device_status == 'ACTIVE':
       self.btn_service.enable()
@@ -240,11 +240,11 @@ class devicePage:
       ui.notify('Device is INACTIVE. Cannot switch service.', color='warning')
       return
 
-    if self.device.get('program') == 'RUNNING':
-      self.device['program'] = 'OFF'
+    if self.device.get('program_status', self.device.get('program')) == 'RUNNING':
+      self.device['program_status'] = 'OFF'
       ui.notify('Service stopped', color='red')
     else:
-      self.device['program'] = 'RUNNING'
+      self.device['program_status'] = 'RUNNING'
       ui.notify('Service started', color='green')
 
     self.mq.on_program_control(
