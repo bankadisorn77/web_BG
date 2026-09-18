@@ -256,11 +256,17 @@ async def image_log(
 ):
   image = payload.get('image')
   detected_objects = payload.get('detected_objects', None)
+  cycle_id = payload.get('cycle_id')
+  camera_id = payload.get('camera_id')
+  pipeline_id = payload.get('pipeline_id')
   device = database.verify_api_key(x_api_key)
   success = database.add_log(
       api_key=x_api_key,
       image_input_path=image,
       detected_objects=detected_objects,
+      cycle_id=cycle_id,
+      camera_id=camera_id,
+      pipeline_id=pipeline_id,
   )
   if not success:
     raise HTTPException(status_code=400, detail='Failed to add log')
