@@ -97,7 +97,7 @@ class DeviceCard(ui.card):
     if new_data:
       self.device.update(new_data)
 
-    program_status = self.device.get('program', 'OFF')
+    program_status = self.device.get('program_status', self.device.get('program', 'OFF'))
     device_status = self.device.get('device_status', 'INACTIVE')
     is_operational = program_status == 'RUNNING' and device_status == 'ACTIVE'
     for key, item in self.badges.items():
