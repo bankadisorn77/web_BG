@@ -217,7 +217,12 @@ async def register_device(payload: dict = Body(...)):
     model_path = payload.get('model_path', '')
     save_image_path = payload.get('save_image_path', '')
     mqtt_broker = payload.get('mqtt_broker', '')
-    io_channel = payload.get('output_channel', {})
+    # Accept the current Edge payload name and the legacy Web name.
+    io_channel = payload.get('io_channel') or payload.get('output_channel') or {}
+    project_id = payload.get('project_id')
+    project_config = payload.get('project_config')
+    camera_config = payload.get('camera_config')
+    io_config = payload.get('io_config')
     # if not output_channel:
     #   output_channel = {
     #       k: v for k, v in payload.items() if k.startswith('output_')
@@ -230,6 +235,10 @@ async def register_device(payload: dict = Body(...)):
         model_path=model_path,
         save_image_path=save_image_path,
         mqtt_broker=mqtt_broker,
+        project_id=project_id,
+        project_config=json.dumps(project_config) if isinstance(project_config, (dict, list)) else project_config,
+        camera_config=json.dumps(camera_config) if isinstance(camera_config, (dict, list)) else camera_config,
+        io_config=json.dumps(io_config) if isinstance(io_config, (dict, list)) else io_config,
     )
     trigger_device_list_update()
     return {'api_key': api_key}
